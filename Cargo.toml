@@ -7,6 +7,8 @@ license = "MIT"
 readme = "README.md"
 homepage = "https://codeberg.org/heptapodEnthusiast/float-bits"
 repository = "https://codeberg.org/heptapodEnthusiast/float-bits"
+documentation = "https://docs.rs/float-bits/latest/float_bits/"
+categories = ["no-std::no-alloc", "rust-patterns"]
 description = "Floats stored as raw bits, making them hashable and totally ordered."
 
 [dependencies]
