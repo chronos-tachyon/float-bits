@@ -28,11 +28,79 @@ mod macros;
 
 mod helpers;
 
-define!(BF16, name "BF16", unsigned u16, signed i16, with 8 exp bits, desc "a Google BFloat16 floating point number");
-define!(F16, name "F16", unsigned u16, signed i16, #[cfg(feature = "f16")] float f16, with 5 exp bits, desc "an IEEE 754 binary16 floating point number");
-define!(F32, name "F32", unsigned u32, signed i32, float f32, with 8 exp bits, desc "an IEEE 754 binary32 floating point number");
-define!(F64, name "F64", unsigned u64, signed i64, float f64, with 11 exp bits, desc "an IEEE 754 binary64 floating point number");
-define!(F128, name "F128", unsigned u128, signed i128, #[cfg(feature = "f128")] float f128, with 15 exp bits, desc "an IEEE 754 binary128 floating point number");
+define! {
+    #[doc = "A newtype containing the raw bits of a Google BFloat16 floating point number."]
+    #[doc = ""]
+    #[doc = "Values of this type are hashable and have a well-defined total order: the one given "]
+    #[doc = "by [`Self::total_cmp`].  As a consequence, `+0.0` is not equal to `-0.0`, and NaN "]
+    #[doc = "compares equal to NaN if both NaN values have exactly the same bit pattern."]
+    pub struct BF16;
+    size 16 bits;
+    exp 8 bits;
+    repr u16 / i16;
+}
+
+define! {
+    #[doc = "A newtype containing the raw bits of an IEEE 754 binary16 floating point number."]
+    #[doc = ""]
+    #[doc = "Values of this type are hashable and have a well-defined total order: the one given "]
+    #[doc = "by [`Self::total_cmp`].  As a consequence, `+0.0` is not equal to `-0.0`, and NaN "]
+    #[doc = "compares equal to NaN if both NaN values have exactly the same bit pattern."]
+    #[doc = ""]
+    #[doc = "# Features"]
+    #[doc = ""]
+    #[doc = "Crate feature `f16` enables use of the Rust [`f16`] primitive type, which is a"]
+    #[doc = "nightly-only language feature that's only functional on certain architectures."]
+    pub struct F16;
+    size 16 bits;
+    exp 5 bits;
+    repr u16 / i16;
+    float f16 with feature "f16";
+}
+
+define! {
+    #[doc = "A newtype containing the raw bits of an IEEE 754 binary32 floating point number."]
+    #[doc = ""]
+    #[doc = "Values of this type are hashable and have a well-defined total order: the one given "]
+    #[doc = "by [`Self::total_cmp`].  As a consequence, `+0.0` is not equal to `-0.0`, and NaN "]
+    #[doc = "compares equal to NaN if both NaN values have exactly the same bit pattern."]
+    pub struct F32;
+    size 32 bits;
+    exp 8 bits;
+    repr u32 / i32;
+    float f32;
+}
+
+define! {
+    #[doc = "A newtype containing the raw bits of an IEEE 754 binary64 floating point number."]
+    #[doc = ""]
+    #[doc = "Values of this type are hashable and have a well-defined total order: the one given "]
+    #[doc = "by [`Self::total_cmp`].  As a consequence, `+0.0` is not equal to `-0.0`, and NaN "]
+    #[doc = "compares equal to NaN if both NaN values have exactly the same bit pattern."]
+    pub struct F64;
+    size 64 bits;
+    exp 11 bits;
+    repr u64 / i64;
+    float f64;
+}
+
+define! {
+    #[doc = "A newtype containing the raw bits of an IEEE 754 binary128 floating point number."]
+    #[doc = ""]
+    #[doc = "Values of this type are hashable and have a well-defined total order: the one given "]
+    #[doc = "by [`Self::total_cmp`].  As a consequence, `+0.0` is not equal to `-0.0`, and NaN "]
+    #[doc = "compares equal to NaN if both NaN values have exactly the same bit pattern."]
+    #[doc = ""]
+    #[doc = "# Features"]
+    #[doc = ""]
+    #[doc = "Crate feature `f128` enables use of the Rust [`f128`] primitive type, which is a"]
+    #[doc = "nightly-only language feature that's only functional on certain architectures."]
+    pub struct F128;
+    size 128 bits;
+    exp 15 bits;
+    repr u128 / i128;
+    float f128 with feature "f128";
+}
 
 impl core::fmt::Display for F64 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -64,41 +132,44 @@ impl core::str::FromStr for F32 {
 
 #[cfg(test)]
 mod tests {
+    use core::num::FpCategory;
+
     use super::*;
-    use core::num::FpCategory as Class;
+    use crate::helpers::{C_INF, C_NAN, C_NORM, C_ZERO};
 
     #[test]
     fn f32_smoke_test() {
-        const PZERO: F32 = F32::ZERO;
-        const NZERO: F32 = F32::NEG_ZERO;
-        const PNORM: F32 = F32::MIN_POSITIVE;
-        const NNORM: F32 = F32::MAX_NEGATIVE;
-        const PONE: F32 = F32::ONE;
-        const NONE: F32 = F32::NEG_ONE;
-        const PMAX: F32 = F32::MAX;
-        const NMAX: F32 = F32::MIN;
-        const PINF: F32 = F32::INFINITY;
-        const NINF: F32 = F32::NEG_INFINITY;
-        const PQNAN: F32 = F32::QNAN;
-        const PSNAN: F32 = F32::SNAN;
-        const NQNAN: F32 = F32::NEG_QNAN;
-        const NSNAN: F32 = F32::NEG_SNAN;
-        type Row = (u32, Class, bool, F32, f32);
+        const P_ZERO: F32 = F32::ZERO;
+        const N_ZERO: F32 = F32::NEG_ZERO;
+        const P_TINY: F32 = F32::MIN_POSITIVE;
+        const N_TINY: F32 = F32::MAX_NEGATIVE;
+        const P_ONE: F32 = F32::ONE;
+        const N_ONE: F32 = F32::NEG_ONE;
+        const P_MAX: F32 = F32::MAX;
+        const N_MAX: F32 = F32::MIN;
+        const P_INF: F32 = F32::INFINITY;
+        const N_INF: F32 = F32::NEG_INFINITY;
+        const P_QNAN: F32 = F32::QNAN;
+        const P_SNAN: F32 = F32::SNAN;
+        const N_QNAN: F32 = F32::NEG_QNAN;
+        const N_SNAN: F32 = F32::NEG_SNAN;
+
+        type Row = (u32, FpCategory, bool, F32, f32);
         const ROWS: [Row; 14] = [
-            (0x00000000, Class::Zero, false, PZERO, 0.0),
-            (0x80000000, Class::Zero, true, NZERO, -0.0),
-            (0x00800000, Class::Normal, false, PNORM, f32::MIN_POSITIVE),
-            (0x80800000, Class::Normal, true, NNORM, -f32::MIN_POSITIVE),
-            (0x3f800000, Class::Normal, false, PONE, 1.0),
-            (0xbf800000, Class::Normal, true, NONE, -1.0),
-            (0x7f7fffff, Class::Normal, false, PMAX, f32::MAX),
-            (0xff7fffff, Class::Normal, true, NMAX, -f32::MAX),
-            (0x7f800000, Class::Infinite, false, PINF, f32::INFINITY),
-            (0xff800000, Class::Infinite, true, NINF, f32::NEG_INFINITY),
-            (0x7f800001, Class::Nan, false, PSNAN, f32::NAN),
-            (0x7fc00001, Class::Nan, false, PQNAN, f32::NAN),
-            (0xff800001, Class::Nan, true, NSNAN, f32::NAN),
-            (0xffc00001, Class::Nan, true, NQNAN, f32::NAN),
+            (0x00000000, C_ZERO, false, P_ZERO, 0.0),
+            (0x80000000, C_ZERO, true, N_ZERO, -0.0),
+            (0x00800000, C_NORM, false, P_TINY, f32::MIN_POSITIVE),
+            (0x80800000, C_NORM, true, N_TINY, -f32::MIN_POSITIVE),
+            (0x3f800000, C_NORM, false, P_ONE, 1.0),
+            (0xbf800000, C_NORM, true, N_ONE, -1.0),
+            (0x7f7fffff, C_NORM, false, P_MAX, f32::MAX),
+            (0xff7fffff, C_NORM, true, N_MAX, -f32::MAX),
+            (0x7f800000, C_INF, false, P_INF, f32::INFINITY),
+            (0xff800000, C_INF, true, N_INF, f32::NEG_INFINITY),
+            (0x7f800001, C_NAN, false, P_SNAN, f32::NAN),
+            (0x7fc00001, C_NAN, false, P_QNAN, f32::NAN),
+            (0xff800001, C_NAN, true, N_SNAN, f32::NAN),
+            (0xffc00001, C_NAN, true, N_QNAN, f32::NAN),
         ];
         for (bits, class, neg, val, float) in ROWS {
             assert_eq!(neg, val.is_sign_negative());
@@ -113,60 +184,37 @@ mod tests {
 
     #[test]
     fn f64_smoke_test() {
-        const PZERO: F64 = F64::ZERO;
-        const NZERO: F64 = F64::NEG_ZERO;
-        const PNORM: F64 = F64::MIN_POSITIVE;
-        const NNORM: F64 = F64::MAX_NEGATIVE;
-        const PONE: F64 = F64::ONE;
-        const NONE: F64 = F64::NEG_ONE;
-        const PMAX: F64 = F64::MAX;
-        const NMAX: F64 = F64::MIN;
-        const PINF: F64 = F64::INFINITY;
-        const NINF: F64 = F64::NEG_INFINITY;
-        const PQNAN: F64 = F64::QNAN;
-        const PSNAN: F64 = F64::SNAN;
-        const NQNAN: F64 = F64::NEG_QNAN;
-        const NSNAN: F64 = F64::NEG_SNAN;
-        type Row = (u64, Class, bool, F64, f64);
+        const P_ZERO: F64 = F64::ZERO;
+        const N_ZERO: F64 = F64::NEG_ZERO;
+        const P_TINY: F64 = F64::MIN_POSITIVE;
+        const N_TINY: F64 = F64::MAX_NEGATIVE;
+        const P_ONE: F64 = F64::ONE;
+        const N_ONE: F64 = F64::NEG_ONE;
+        const P_MAX: F64 = F64::MAX;
+        const N_MAX: F64 = F64::MIN;
+        const P_INF: F64 = F64::INFINITY;
+        const N_INF: F64 = F64::NEG_INFINITY;
+        const P_QNAN: F64 = F64::QNAN;
+        const P_SNAN: F64 = F64::SNAN;
+        const N_QNAN: F64 = F64::NEG_QNAN;
+        const N_SNAN: F64 = F64::NEG_SNAN;
+
+        type Row = (u64, FpCategory, bool, F64, f64);
         const ROWS: [Row; 14] = [
-            (0x0000000000000000, Class::Zero, false, PZERO, 0.0),
-            (0x8000000000000000, Class::Zero, true, NZERO, -0.0),
-            (
-                0x0010000000000000,
-                Class::Normal,
-                false,
-                PNORM,
-                f64::MIN_POSITIVE,
-            ),
-            (
-                0x8010000000000000,
-                Class::Normal,
-                true,
-                NNORM,
-                -f64::MIN_POSITIVE,
-            ),
-            (0x3ff0000000000000, Class::Normal, false, PONE, 1.0),
-            (0xbff0000000000000, Class::Normal, true, NONE, -1.0),
-            (0x7fefffffffffffff, Class::Normal, false, PMAX, f64::MAX),
-            (0xffefffffffffffff, Class::Normal, true, NMAX, -f64::MAX),
-            (
-                0x7ff0000000000000,
-                Class::Infinite,
-                false,
-                PINF,
-                f64::INFINITY,
-            ),
-            (
-                0xfff0000000000000,
-                Class::Infinite,
-                true,
-                NINF,
-                f64::NEG_INFINITY,
-            ),
-            (0x7ff0000000000001, Class::Nan, false, PSNAN, f64::NAN),
-            (0x7ff8000000000001, Class::Nan, false, PQNAN, f64::NAN),
-            (0xfff0000000000001, Class::Nan, true, NSNAN, f64::NAN),
-            (0xfff8000000000001, Class::Nan, true, NQNAN, f64::NAN),
+            (0x0000000000000000, C_ZERO, false, P_ZERO, 0.0),
+            (0x8000000000000000, C_ZERO, true, N_ZERO, -0.0),
+            (0x0010000000000000, C_NORM, false, P_TINY, f64::MIN_POSITIVE),
+            (0x8010000000000000, C_NORM, true, N_TINY, -f64::MIN_POSITIVE),
+            (0x3ff0000000000000, C_NORM, false, P_ONE, 1.0),
+            (0xbff0000000000000, C_NORM, true, N_ONE, -1.0),
+            (0x7fefffffffffffff, C_NORM, false, P_MAX, f64::MAX),
+            (0xffefffffffffffff, C_NORM, true, N_MAX, -f64::MAX),
+            (0x7ff0000000000000, C_INF, false, P_INF, f64::INFINITY),
+            (0xfff0000000000000, C_INF, true, N_INF, f64::NEG_INFINITY),
+            (0x7ff0000000000001, C_NAN, false, P_SNAN, f64::NAN),
+            (0x7ff8000000000001, C_NAN, false, P_QNAN, f64::NAN),
+            (0xfff0000000000001, C_NAN, true, N_SNAN, f64::NAN),
+            (0xfff8000000000001, C_NAN, true, N_QNAN, f64::NAN),
         ];
         for (bits, class, neg, val, float) in ROWS {
             assert_eq!(neg, val.is_sign_negative());

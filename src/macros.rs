@@ -1,12 +1,6 @@
-macro_rules! common {
-    ($ty:ident, name $name:tt, unsigned $u_ty:ty, signed $s_ty:ty, with $n:literal exp bits, desc $desc:tt) => {
-        #[doc = "A newtype containing the raw bits of "]
-        #[doc = $desc]
-        #[doc = "."]
-        ///
-        /// Values of this type are hashable and have a well-defined total order, the one given by
-        /// [`Self::total_cmp`].  As a consequence, positive zero is not equal to negative zero,
-        /// and NaN can compare equal to NaN if both values have exactly the same bit pattern.
+macro_rules! define_head {
+    ( $( #[$meta:meta] )* $vis:vis struct $ty:ident; $u_ty:ty) => {
+        $( #[$meta] )*
         #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
         #[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
         #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -17,14 +11,135 @@ macro_rules! common {
         }
 
         impl $ty {
-            const ABS_BITS: $u_ty = <$u_ty>::MAX >> 1;
-            const NEG_BIT: $u_ty = !Self::ABS_BITS;
-            const EXP_BITS: $u_ty = Self::ABS_BITS & !Self::FRAC_BITS;
-            const FRAC_BITS: $u_ty = Self::ABS_BITS >> $n;
-            const EXP_ZERO: $u_ty = Self::EXP_BITS & (Self::EXP_BITS >> 1);
-            const EXP_MAX: $u_ty = Self::EXP_BITS & (Self::EXP_BITS << 1);
-            const EXP_MIN: $u_ty = Self::EXP_BITS & !Self::EXP_MAX;
-            const QUIET_BIT: $u_ty = Self::FRAC_BITS & !(Self::FRAC_BITS >> 1);
+            /// Constructs a wrapped float from the raw float bits.
+            pub const fn from_bits(bits: $u_ty) -> Self {
+                Self { bits }
+            }
+
+            /// Returns the raw float bits.
+            pub const fn to_bits(&self) -> $u_ty {
+                self.bits
+            }
+        }
+    };
+}
+
+macro_rules! define_mid {
+    ($ty:ident;) => {};
+    ($ty:ident; float $f_ty:ident;) => {
+        impl $ty {
+            /// Constructs a wrapped float from a Rust float.
+            pub const fn from_float(float: $f_ty) -> Self {
+                Self::from_bits(float.to_bits())
+            }
+
+            /// Returns the Rust float which this wrapped float represents.
+            pub const fn to_float(&self) -> $f_ty {
+                <$f_ty>::from_bits(self.bits)
+            }
+        }
+
+        impl From<$f_ty> for $ty {
+            fn from(float: $f_ty) -> Self {
+                Self::from_float(float)
+            }
+        }
+
+        impl From<$ty> for $f_ty {
+            fn from(val: $ty) -> $f_ty {
+                val.to_float()
+            }
+        }
+    };
+    ($ty:ident; float $f_ty:ident with feature $feature:literal;) => {
+        #[cfg(feature = $feature)]
+        impl $ty {
+            /// Constructs a wrapped float from a Rust float.
+            ///
+            /// # Features
+            ///
+            /// Available only with feature: `
+            #[doc = $feature]
+            /// `.
+            pub const fn from_float(float: $f_ty) -> Self {
+                Self::from_bits(float.to_bits())
+            }
+
+            /// Returns the Rust float which this wrapped float represents.
+            ///
+            /// # Features
+            ///
+            /// Available only with feature: `
+            #[doc = $feature]
+            /// `.
+            pub const fn to_float(&self) -> $f_ty {
+                <$f_ty>::from_bits(self.bits)
+            }
+        }
+
+        #[cfg(feature = $feature)]
+        impl From<$f_ty> for $ty {
+            fn from(float: $f_ty) -> Self {
+                Self::from_float(float)
+            }
+        }
+
+        #[cfg(feature = $feature)]
+        impl From<$ty> for $f_ty {
+            fn from(val: $ty) -> $f_ty {
+                val.to_float()
+            }
+        }
+    };
+}
+
+macro_rules! define_tail {
+    ($ty:ident; $u_ty:ty; $s_ty:ty; $size_bits:literal; $exp_bits:literal) => {
+        impl $ty {
+            /// Number of total bits in the representation.
+            pub const BITS: usize = $size_bits;
+
+            /// Number of bits in the exponent representation.
+            pub const EXP_BITS: usize = $exp_bits;
+
+            /// Number of bits in the mantissa representation.
+            pub const MANTISSA_BITS: usize = Self::BITS - Self::EXP_BITS - 1;
+
+            /// Number of significant digits in base 2.
+            ///
+            /// Note that the size of the mantissa in the bitwise representation is one smaller
+            /// than this, since the leading 1 is not stored explicitly.
+            pub const MANTISSA_DIGITS: usize = Self::BITS - Self::EXP_BITS;
+
+            // All bits except sign bit.
+            const ABS_MASK: $u_ty = <$u_ty>::MAX >> 1;
+
+            // Sign bit.
+            const SIGN_MASK: $u_ty = !Self::ABS_MASK;
+
+            // Exponent bits.
+            const EXP_MASK: $u_ty = Self::ABS_MASK & !Self::MANT_MASK;
+
+            // Exponent bit pattern representing 2^0.
+            //
+            // For 8 exponent bits, this is 0x7f shifted into the exponent slot.
+            const EXP_ZERO: $u_ty = Self::EXP_MASK & (Self::EXP_MASK >> 1);
+
+            // Exponent bit pattern representing 2^MAX.
+            //
+            // For 8 exponent bits, this is 0xfe shifted into the exponent slot.
+            const EXP_MAX: $u_ty = Self::EXP_MASK & (Self::EXP_MASK << 1);
+
+            // Exponent bit pattern representing 2^MIN.
+            //
+            // For 8 exponent bits, this is 0x01 shifted into the exponent slot.
+            const EXP_MIN: $u_ty = Self::EXP_MASK & !Self::EXP_MAX;
+
+            // Mantissa bits.
+            const MANT_MASK: $u_ty = Self::ABS_MASK >> Self::EXP_BITS;
+
+            // Most significant mantissa bit, representing `is_quiet` for NaN values.
+            const QUIET_MASK: $u_ty = Self::MANT_MASK & !(Self::MANT_MASK >> 1);
 
             /// Positive zero (`+0.0`).
             pub const ZERO: Self = Self::from_bits(0);
@@ -33,13 +148,13 @@ macro_rules! common {
             pub const ONE: Self = Self::from_bits(Self::EXP_ZERO);
 
             /// Positive infinity (`+∞`).
-            pub const INFINITY: Self = Self::from_bits(Self::EXP_BITS);
+            pub const INFINITY: Self = Self::from_bits(Self::EXP_MASK);
 
             /// Not a Number (NaN) with sign bit 0, `is_quiet` bit 0, and arbitrary payload.
-            pub const SNAN: Self = Self::from_bits(Self::EXP_BITS | 1);
+            pub const SNAN: Self = Self::from_bits(Self::EXP_MASK | 1);
 
             /// Not a Number (NaN) with sign bit 0, `is_quiet` bit 1, and arbitrary payload.
-            pub const QNAN: Self = Self::from_bits(Self::EXP_BITS | Self::QUIET_BIT | 1);
+            pub const QNAN: Self = Self::from_bits(Self::EXP_MASK | Self::QUIET_MASK | 1);
 
             /// Negative zero (`−0.0`).
             pub const NEG_ZERO: Self = Self::ZERO.neg();
@@ -57,7 +172,7 @@ macro_rules! common {
             pub const NEG_QNAN: Self = Self::QNAN.neg();
 
             /// The positive normal value with the greatest possible absolute magnitude.
-            pub const MAX: Self = Self::from_bits(Self::EXP_MAX | Self::FRAC_BITS);
+            pub const MAX: Self = Self::from_bits(Self::EXP_MAX | Self::MANT_MASK);
 
             /// The negative normal value with the greatest possible absolute magnitude.
             pub const MIN: Self = Self::MAX.neg();
@@ -71,21 +186,11 @@ macro_rules! common {
             #[doc(hidden)]
             pub const NAN: Self = Self::QNAN;
 
-            /// Constructs a wrapped float from the raw float bits.
-            pub const fn from_bits(bits: $u_ty) -> Self {
-                Self { bits }
-            }
-
-            /// Returns the raw float bits.
-            pub const fn to_bits(&self) -> $u_ty {
-                self.bits
-            }
-
             /// Returns `true` if self has a positive sign, including `+0.0`, `+∞`, and [NaN] with positive sign bit.
             ///
             /// [NaN]: https://en.wikipedia.org/wiki/NaN
             pub const fn is_sign_positive(&self) -> bool {
-                (self.bits & Self::NEG_BIT) == 0
+                (self.bits & Self::SIGN_MASK) == 0
             }
 
             /// Returns `true` if self has a negative sign, including `-0.0`, `-∞`, and [NaN] with negative sign bit.
@@ -96,15 +201,15 @@ macro_rules! common {
             }
 
             /// Returns the floating point category of the number.
-            pub const fn classify(&self) -> ::core::num::FpCategory {
-                let exp = self.bits & Self::EXP_BITS;
-                let frac = self.bits & Self::FRAC_BITS;
-                use ::core::num::FpCategory;
-                match (exp, frac) {
+            pub const fn classify(&self) -> core::num::FpCategory {
+                let exp = self.bits & Self::EXP_MASK;
+                let mant = self.bits & Self::MANT_MASK;
+                use core::num::FpCategory;
+                match (exp, mant) {
                     (0, 0) => FpCategory::Zero,
                     (0, _) => FpCategory::Subnormal,
-                    (Self::EXP_BITS, 0) => FpCategory::Infinite,
-                    (Self::EXP_BITS, _) => FpCategory::Nan,
+                    (Self::EXP_MASK, 0) => FpCategory::Infinite,
+                    (Self::EXP_MASK, _) => FpCategory::Nan,
                     _ => FpCategory::Normal,
                 }
             }
@@ -154,7 +259,7 @@ macro_rules! common {
             ///
             /// The result is always exact.  The result will always test `true` with [`Self::is_sign_positive`].
             pub const fn abs(&self) -> Self {
-                let bits = self.bits & Self::ABS_BITS;
+                let bits = self.bits & Self::ABS_MASK;
                 Self { bits }
             }
 
@@ -162,7 +267,7 @@ macro_rules! common {
             ///
             /// The result is always exact.
             pub const fn neg(&self) -> Self {
-                let bits = self.bits ^ Self::NEG_BIT;
+                let bits = self.bits ^ Self::SIGN_MASK;
                 Self { bits }
             }
 
@@ -185,18 +290,14 @@ macro_rules! common {
 
             /// Returns a number composed of the magnitude of `self` and the sign of `sign`.
             pub const fn copysign(&self, sign: Self) -> Self {
-                let self_bits = self.bits & Self::ABS_BITS;
-                let sign_bit = sign.bits & Self::NEG_BIT;
+                let self_bits = self.bits & Self::ABS_MASK;
+                let sign_bit = sign.bits & Self::SIGN_MASK;
                 let bits = self_bits | sign_bit;
                 Self { bits }
             }
 
             const fn sort_bits(&self) -> $s_ty {
-                let mask = if self.is_sign_negative() {
-                    Self::ABS_BITS
-                } else {
-                    0
-                };
+                let mask = if self.is_sign_negative() { Self::ABS_MASK } else { 0 };
                 let bits = self.bits ^ mask;
                 bits as $s_ty
             }
@@ -220,8 +321,8 @@ macro_rules! common {
             /// * positive infinity
             /// * positive signaling NaN
             /// * positive quiet NaN
-            pub const fn total_cmp(&self, rhs: Self) -> ::core::cmp::Ordering {
-                use ::core::cmp::Ordering;
+            pub const fn total_cmp(&self, rhs: Self) -> core::cmp::Ordering {
+                use core::cmp::Ordering;
                 let lhs = self.sort_bits();
                 let rhs = rhs.sort_bits();
                 if lhs == rhs {
@@ -244,7 +345,7 @@ macro_rules! common {
             ///
             /// Panics if `min` > `max`, `min` is NaN, or `max` is NaN.
             pub const fn clamp(&self, min: Self, max: Self) -> Self {
-                use ::core::cmp::Ordering;
+                use core::cmp::Ordering;
                 if min.is_nan() {
                     panic!("min is NaN")
                 } else if max.is_nan() {
@@ -271,13 +372,13 @@ macro_rules! common {
         }
 
         impl PartialOrd for $ty {
-            fn partial_cmp(&self, rhs: &Self) -> Option<::core::cmp::Ordering> {
-                Some(::core::cmp::Ord::cmp(self, rhs))
+            fn partial_cmp(&self, rhs: &Self) -> Option<core::cmp::Ordering> {
+                Some(Ord::cmp(self, rhs))
             }
         }
 
         impl Ord for $ty {
-            fn cmp(&self, rhs: &Self) -> ::core::cmp::Ordering {
+            fn cmp(&self, rhs: &Self) -> core::cmp::Ordering {
                 self.total_cmp(*rhs)
             }
         }
@@ -285,37 +386,15 @@ macro_rules! common {
 }
 
 macro_rules! define {
-    ($ty:ident, name $name:tt, unsigned $u_ty:ty, signed $s_ty:ty, $( #[$meta:meta] )? float $f_ty:tt, $( $rest:tt )* ) => {
-        $( #[$meta] )?
-        impl $ty {
-            /// Constructs a wrapped float from a Rust float.
-            pub const fn from_float(float: $f_ty) -> Self {
-                Self::from_bits(float.to_bits())
-            }
-
-            /// Returns the Rust float which this wrapped float represents.
-            pub const fn to_float(&self) -> $f_ty {
-                <$f_ty>::from_bits(self.bits)
-            }
-        }
-
-        common!($ty, name $name, unsigned $u_ty, signed $s_ty, $( $rest )* );
-
-        $( #[$meta] )?
-        impl From<$f_ty> for $ty {
-            fn from(float: $f_ty) -> Self {
-                Self::from_float(float)
-            }
-        }
-
-        $( #[$meta] )?
-        impl From<$ty> for $f_ty {
-            fn from(val: $ty) -> $f_ty {
-                val.to_float()
-            }
-        }
-    };
-    ($ty:ident, name $name:tt, unsigned $u_ty:ty, signed $s_ty:ty, $( $rest:tt )* ) => {
-        common!($ty, name $name, unsigned $u_ty, signed $s_ty, $( $rest )* );
+    {
+        $( #[$meta:meta] )* $vis:vis struct $ty:ident;
+        size $size_bits:literal bits;
+        exp $exp_bits:literal bits;
+        repr $u_ty:ident / $s_ty:ident;
+        $( $rest:tt )*
+    } => {
+        define_head!($( #[$meta] )* $vis struct $ty; $u_ty);
+        define_mid!($ty; $( $rest )*);
+        define_tail!($ty; $u_ty; $s_ty; $size_bits; $exp_bits);
     };
 }
